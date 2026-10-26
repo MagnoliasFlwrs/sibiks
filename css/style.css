@@ -1580,7 +1580,7 @@ body:has(dialog[open]) {
   }
 
   .home-scenery__mountains {
-    left: 26%;
+    left: 0;
     right: auto;
     width: 100%;
     opacity: .5;
