@@ -91,59 +91,85 @@ const initializeEcosystemMotion = () => {
   traveler.setAttribute('aria-hidden', 'true');
   ecosystem.append(traveler);
 
+  const fullTurn = Math.PI * 2;
+  const normalizeAngle = (angle) => ((angle % fullTurn) + fullTurn) % fullTurn;
+  let orbitPoints = [];
+  let orbitCenter = { x: 0, y: 0 };
   let activeIndex = 0;
-  let currentPosition = null;
-  let departurePosition = null;
+  let currentAngle = 0;
+  let departureAngle = 0;
+  let destinationAngle = 0;
   let movementStarted = 0;
+  let movementDuration = 0;
   let arrivedAt = 0;
   let animationFrame = 0;
-  let isInteracting = false;
+  let hoveredIndex = null;
+  let focusedIndex = null;
 
-  // Координаты относительно композиции остаются точными при любом её масштабе.
-  const getDestination = (index) => {
+  const measureOrbit = () => {
     const bounds = ecosystem.getBoundingClientRect();
-    const bubble = services[index].querySelector('.ecosystem__bubble').getBoundingClientRect();
-    return {
-      x: bubble.left - bounds.left + bubble.width * .86,
-      y: bubble.top - bounds.top + bubble.height * .16,
-      size: bubble.width * .52,
+    const center = ecosystem.querySelector('.ecosystem__center').getBoundingClientRect();
+    orbitCenter = {
+      x: center.left - bounds.left + center.width / 2,
+      y: center.top - bounds.top + center.height / 2,
     };
+    orbitPoints = services.map((service, index) => {
+      const bubble = service.querySelector('.ecosystem__bubble').getBoundingClientRect();
+      const offsetX = bubble.left - bounds.left + bubble.width / 2 - orbitCenter.x;
+      const offsetY = bubble.top - bounds.top + bubble.height / 2 - orbitCenter.y;
+      return {
+        index,
+        angle: normalizeAngle(Math.atan2(offsetY, offsetX)),
+        radius: Math.hypot(offsetX, offsetY),
+        size: bubble.width * 1.2,
+      };
+    }).sort((first, second) => first.angle - second.angle);
+    traveler.style.width = `${orbitPoints[0].size}px`;
+    traveler.style.height = `${orbitPoints[0].size}px`;
   };
 
-  const selectService = (index, timestamp) => {
+  // Радиус плавно меняется между пунктами: траектория проходит через все иконки,
+  // но всегда огибает центр по орбите, в том числе при смене цели на полпути.
+  const getOrbitRadius = (angle) => {
+    const normalized = normalizeAngle(angle);
+    const nextIndex = orbitPoints.findIndex((point) => point.angle > normalized);
+    const next = orbitPoints[nextIndex === -1 ? 0 : nextIndex];
+    const previous = orbitPoints[(nextIndex === -1 ? orbitPoints.length : nextIndex || orbitPoints.length) - 1];
+    const segmentLength = normalizeAngle(next.angle - previous.angle);
+    const progress = normalizeAngle(normalized - previous.angle) / segmentLength;
+    const blend = progress * progress * (3 - 2 * progress);
+    return previous.radius + (next.radius - previous.radius) * blend;
+  };
+
+  const selectService = (index, timestamp, clockwise = false) => {
     activeIndex = index;
-    departurePosition = currentPosition ? { ...currentPosition } : getDestination(index);
+    departureAngle = currentAngle;
+    const target = orbitPoints.find((point) => point.index === index);
+    let distance = normalizeAngle(target.angle - currentAngle);
+    if (!clockwise && distance > Math.PI) distance -= fullTurn;
+    destinationAngle = currentAngle + distance;
     movementStarted = timestamp;
+    movementDuration = Math.max(650, Math.abs(distance) * 1000);
     arrivedAt = 0;
-    services.forEach((service, serviceIndex) => {
-      service.classList.toggle('ecosystem__service--highlighted', serviceIndex === index);
-    });
+    services.forEach((service) => service.classList.remove('ecosystem__service--highlighted'));
   };
 
   const renderFrame = (timestamp) => {
-    const destination = getDestination(activeIndex);
-    const progress = Math.min((timestamp - movementStarted) / 1700, 1);
+    const progress = Math.min((timestamp - movementStarted) / movementDuration, 1);
     const easedProgress = progress * progress * (3 - 2 * progress);
-    const bounds = ecosystem.getBoundingClientRect();
-    const middleX = (departurePosition.x + destination.x) / 2;
-    const middleY = (departurePosition.y + destination.y) / 2;
-    // Дуга огибает центральный логотип, а не пересекает его по прямой.
-    const controlX = middleX + (middleX - bounds.width / 2) * .6;
-    const controlY = middleY + (middleY - bounds.height / 2) * .6;
-    const remaining = 1 - easedProgress;
-    currentPosition = {
-      x: remaining ** 2 * departurePosition.x + 2 * remaining * easedProgress * controlX + easedProgress ** 2 * destination.x,
-      y: remaining ** 2 * departurePosition.y + 2 * remaining * easedProgress * controlY + easedProgress ** 2 * destination.y,
-    };
-    traveler.style.width = `${destination.size}px`;
-    traveler.style.height = `${destination.size}px`;
-    traveler.style.transform = `translate(${currentPosition.x}px, ${currentPosition.y}px) translate(-50%, -50%)`;
-    traveler.classList.toggle('ecosystem__traveler--docked', progress === 1);
+    currentAngle = departureAngle + (destinationAngle - departureAngle) * easedProgress;
+    const radius = getOrbitRadius(currentAngle);
+    const positionX = orbitCenter.x + Math.cos(currentAngle) * radius;
+    const positionY = orbitCenter.y + Math.sin(currentAngle) * radius;
+    traveler.style.transform = `translate(${positionX}px, ${positionY}px) translate(-50%, -50%)`;
 
     if (progress === 1) {
-      if (!arrivedAt) arrivedAt = timestamp;
-      if (!isInteracting && timestamp - arrivedAt > 2300) {
-        selectService((activeIndex + 1) % services.length, timestamp);
+      if (!arrivedAt) {
+        arrivedAt = timestamp;
+        services[activeIndex].classList.add('ecosystem__service--highlighted');
+      }
+      if (hoveredIndex === null && focusedIndex === null && timestamp - arrivedAt > 1100) {
+        selectService((activeIndex + 1) % services.length, timestamp, true);
       }
     }
     animationFrame = requestAnimationFrame(renderFrame);
@@ -152,37 +178,42 @@ const initializeEcosystemMotion = () => {
   const synchronizeMotion = () => {
     cancelAnimationFrame(animationFrame);
     traveler.hidden = reducedMotion.matches;
-    if (reducedMotion.matches || document.hidden) {
-      services.forEach((service) => service.classList.remove('ecosystem__service--highlighted'));
-      return;
-    }
-    currentPosition = getDestination(activeIndex);
+    services.forEach((service) => service.classList.remove('ecosystem__service--highlighted'));
+    if (reducedMotion.matches || document.hidden) return;
+    measureOrbit();
+    currentAngle = orbitPoints.find((point) => point.index === activeIndex).angle;
     selectService(activeIndex, performance.now());
     animationFrame = requestAnimationFrame(renderFrame);
   };
 
+  const followInteraction = () => {
+    const selectedIndex = hoveredIndex ?? focusedIndex;
+    if (selectedIndex !== null && !reducedMotion.matches) {
+      selectService(selectedIndex, performance.now());
+    } else {
+      arrivedAt = 0;
+    }
+  };
+
   services.forEach((service, index) => {
-    const followService = () => {
-      isInteracting = true;
-      if (!reducedMotion.matches) selectService(index, performance.now());
-    };
-    const resumeJourney = () => {
-      isInteracting = ecosystem.matches(':hover') || ecosystem.contains(document.activeElement);
-      arrivedAt = performance.now();
-    };
-    service.addEventListener('pointerenter', followService);
-    service.addEventListener('focus', followService);
-    service.addEventListener('pointerleave', resumeJourney);
-    service.addEventListener('blur', resumeJourney);
+    service.addEventListener('pointerenter', () => {
+      hoveredIndex = index;
+      followInteraction();
+    });
+    service.addEventListener('pointerleave', () => {
+      hoveredIndex = null;
+      followInteraction();
+    });
+    service.addEventListener('focus', () => {
+      focusedIndex = index;
+      followInteraction();
+    });
+    service.addEventListener('blur', () => {
+      focusedIndex = null;
+      followInteraction();
+    });
   });
 
-  ecosystem.addEventListener('pointerleave', () => {
-    isInteracting = ecosystem.contains(document.activeElement);
-    arrivedAt = performance.now();
-  });
-  ecosystem.addEventListener('focusout', (event) => {
-    if (!ecosystem.contains(event.relatedTarget)) isInteracting = false;
-  });
   window.addEventListener('resize', synchronizeMotion);
   document.addEventListener('visibilitychange', synchronizeMotion);
   reducedMotion.addEventListener('change', synchronizeMotion);

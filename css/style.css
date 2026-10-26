@@ -2161,53 +2161,37 @@ body:has(dialog[open]) {
   }
 }
 
-/* Стеклянный спутник мягко перелетает между направлениями. */
+/* Золотой свет движется под стеклянными иконками по общей орбите. */
 .ecosystem__traveler {
   position: absolute;
-  z-index: 4;
+  z-index: 0;
   top: 0;
   left: 0;
-  border: 1px solid #ffffffed;
   border-radius: 50%;
-  background: radial-gradient(circle at 28% 24%, #fff 0%, #ffffffb3 12%, #e5efff33 42%, #a5bddf55 68%, #ffffffcc 82%, #e4a22255 100%);
-  box-shadow: inset 2px 3px 8px #fff, inset -3px -4px 9px #3768ad22, 0 5px 20px #3768ad22;
-  backdrop-filter: blur(1px);
+  background: radial-gradient(circle, #fff8df 0%, #ffdf8c 12%, #f6c65a99 30%, #e4a22240 52%, #e4a22200 72%);
+  box-shadow: 0 0 32px 8px #e4a22230;
+  filter: blur(5px);
   pointer-events: none;
   will-change: transform;
-
-  &::before {
-    content: "";
-    position: absolute;
-    inset: 10%;
-    border: 1px solid #ffffff8c;
-    border-radius: inherit;
-  }
-
-  &::after {
-    content: "";
-    position: absolute;
-    top: 20%;
-    left: 23%;
-    width: 22%;
-    height: 12%;
-    border-radius: 50%;
-    background: #fff;
-    filter: blur(1px);
-    transform: rotate(-35deg);
-  }
-}
-
-.ecosystem__traveler--docked {
-  animation: traveler-breathe 3s ease-in-out infinite;
 }
 
 .ecosystem__service {
+  z-index: 1;
+
+  &:hover {
+    transform: none;
+  }
+
   & .ecosystem__bubble {
-    transition: filter .6s ease;
+    transition: filter .5s ease;
   }
 
   & > strong {
-    transition: color .6s ease;
+    transition: color .5s ease;
+  }
+
+  &:focus-visible .ecosystem__bubble {
+    filter: drop-shadow(0 0 12px #e4a22240);
   }
 }
 
@@ -2218,17 +2202,6 @@ body:has(dialog[open]) {
 
   & > strong {
     color: #28558e;
-  }
-}
-
-@keyframes traveler-breathe {
-  0%,
-  100% {
-    margin-top: 0;
-  }
-
-  50% {
-    margin-top: -6px;
   }
 }
 
